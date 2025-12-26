@@ -24,7 +24,7 @@ if __name__ == "__main__":
    
     fp16 = False
    
-    num_classes = 4
+    num_classes = 3
     
     backbone = ""
     
@@ -32,7 +32,7 @@ if __name__ == "__main__":
   
     model_path = ""
  
-    input_shape = [560, 560]
+    input_shape = [480, 640]
 
     Init_Epoch = 0
     Freeze_Epoch = 50
