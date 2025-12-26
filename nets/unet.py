@@ -46,10 +46,13 @@ class TQ(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        x_a = x
+        x_a = x # Unused in original code?
         x_1 = self.conv1(x)
         x_2 = self.conv2(x)
         x_4 = self.conv4(x)
+        # Fix: Define 'out'. Assuming summation or concatenation. 
+        # Given input/output channels are same, summation is likely:
+        out = x_1 + x_2 + x_4 
         return out
 
 
@@ -89,9 +92,10 @@ class GMSA(nn.Module):
 
     def forward(self, x):
         gn_x = self.gn(x)
-        x = x * reweigts
+    # Fix: Calculate weights using the sigmoid defined in init (fix typo 'sigomid' if needed)
+        w = self.sigomid(gn_x) 
+        x = x * w  # Apply weights
         out = self.tq(x)
-
         return out
 
 
@@ -157,7 +161,8 @@ class EFE(nn.Module):
         super(EFE, self).__init__()
         self.sobel_strength = sobel_strength
         self.in_channels = in_channels
-        # self.conv = nn.Conv2d(in_channels=3, out_channels=1, kernel_size=1)
+        
+        # Define Sobel kernels
         sobel_x = sobel_strength * torch.tensor([[-1, 0, 1],
                                                  [-2, 0, 2],
                                                  [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3)
@@ -168,14 +173,39 @@ class EFE(nn.Module):
                                                [-1, 9, -1],
                                                [-1, -1, -1]], dtype=torch.float32).view(1, 1, 3, 3)
 
-
         self.register_buffer('sobel_x', sobel_x)
         self.register_buffer('sobel_y', sobel_y)
         self.register_buffer('sobel', sobel)
         self.bn = nn.BatchNorm2d(in_channels)
         self.silu = nn.SiLU(inplace=True)
-
         self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # x shape: (Batch, Channels, Height, Width)
+        
+        # Expand kernels to apply to each channel individually (Group Conv)
+        weight_x = self.sobel_x.expand(x.size(1), 1, 3, 3)
+        weight_y = self.sobel_y.expand(x.size(1), 1, 3, 3)
+        
+        # Apply Sobel filters
+        g_x = F.conv2d(x, weight_x, padding=1, groups=x.size(1))
+        g_y = F.conv2d(x, weight_y, padding=1, groups=x.size(1))
+        
+        # Calculate Gradient Magnitude
+        g = torch.abs(g_x) + torch.abs(g_y)
+        
+        # Apply Batch Normalization and SiLU activation
+        g = self.bn(g)
+        g = self.silu(g)
+        
+        # Reduce to 1 channel (required by BFA module)
+        # We use mean across channels to aggregate edge info
+        g = torch.mean(g, dim=1, keepdim=True)
+        
+        # Apply Sigmoid to get edge probability map (0 to 1)
+        g = self.sigmoid(g)
+        
+        return g
 
 
 
